@@ -1,0 +1,94 @@
+name: StackGuardian Template Sync Example
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - '.sg/**'
+  schedule:
+    - cron: '0 2 * * *'  # Run daily at 2 AM UTC
+  workflow_dispatch:
+    inputs:
+      template:
+        description: 'StackGuardian template name'
+        required: true
+      organization:
+        description: 'StackGuardian organization name'
+        required: true
+      base_path:
+        description: 'Base path for StackGuardian template files'
+        required: false
+        default: '.sg'
+      api_url:
+        description: 'StackGuardian API URL'
+        required: false
+        default: 'https://api.app.stackguardian.io'
+
+jobs:
+  push:
+    name: Push changes to StackGuardian
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Push to StackGuardian
+        uses: ./.github/actions/sync
+        with:
+          SG_TOKEN: ${{ secrets.SG_TOKEN }}
+          SG_BASE_PATH: ${{ github.event.inputs.base_path || '.sg' }}
+          SG_TEMPLATE: ${{ github.event.inputs.template }}
+          SG_ORG: ${{ github.event.inputs.organization }}
+          SG_BASE_URL: ${{ github.event.inputs.api_url || 'https://api.app.stackguardian.io' }}
+          mode: push
+
+  pull:
+    name: Pull changes from StackGuardian
+    runs-on: ubuntu-latest
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Pull from StackGuardian
+        uses: ./.github/actions/sync
+        with:
+          SG_TOKEN: ${{ secrets.SG_TOKEN }}
+          SG_BASE_PATH: ${{ github.event.inputs.base_path || '.sg' }}
+          SG_TEMPLATE: ${{ github.event.inputs.template }}
+          SG_ORG: ${{ github.event.inputs.organization }}
+          SG_BASE_URL: ${{ github.event.inputs.api_url || 'https://api.app.stackguardian.io' }}
+          mode: pull
+
+      - name: Check for changes
+        id: check_pull_changes
+        run: |
+          git add ${{ github.event.inputs.base_path || '.sg' }}/
+          if git diff --staged --quiet ${{ github.event.inputs.base_path || '.sg' }}/; then
+            echo "changes=false" >> $GITHUB_OUTPUT
+          else
+            echo "changes=true" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Configure Git and Commit Changes
+        if: steps.check_pull_changes.outputs.changes == 'true'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git commit -m "Update StackGuardian template configuration"
+
+      - name: Create Pull Request
+        if: steps.check_pull_changes.outputs.changes == 'true'
+        uses: peter-evans/create-pull-request@v5
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          commit-message: Update StackGuardian template configuration
+          title: Update StackGuardian template configuration
+          body: |
+            This PR updates the StackGuardian template configuration files
+            with the latest changes from the StackGuardian platform.
+          branch: update/sg-template-config
+          delete-branch: true
+          add-paths: |
+            ${{ github.event.inputs.base_path || '.sg' }}/

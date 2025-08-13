@@ -1,0 +1,50 @@
+name: 'StackGuardian Template Sync'
+description: 'A reusable action to sync templates in push or pull mode.'
+inputs:
+  # required
+  SG_TOKEN:
+    description: 'StackGuardian Token'
+    required: true
+  SG_TEMPLATE:
+    description: 'StackGuardian Template'
+    required: true
+  SG_ORG:
+    description: 'StackGuardian Organization'
+    required: true
+
+  # optional
+  SG_BASE_URL:
+    description: 'Stackguardian API Endpoint'
+    required: false
+    default: "https://api.app.stackguardian.io"
+  SG_BASE_PATH:
+    description: 'StackGuardian Path'
+    required: false
+    default: '.sg'
+  mode:
+    description: 'Sync mode - either "push" or "pull"'
+    required: false
+    default: "push"
+runs:
+  using: 'composite'
+  steps:
+    - name: Set script path based on mode
+      shell: bash
+      run: |
+        if [ "${{ inputs.mode }}" == "pull" ]; then
+          echo "SCRIPT_PATH=${{ github.action_path }}/../../pull.sh" >> $GITHUB_ENV
+        else
+          echo "SCRIPT_PATH=${{ github.action_path }}/../../push.sh" >> $GITHUB_ENV
+        fi
+    
+    - name: Run sync script
+      shell: bash
+      run: |
+        chmod +x $SCRIPT_PATH
+        $SCRIPT_PATH
+      env:
+        SG_TOKEN: ${{ inputs.SG_TOKEN }}
+        SG_BASE_PATH: ${{ inputs.SG_BASE_PATH }}
+        SG_TEMPLATE: ${{ inputs.SG_TEMPLATE }}
+        SG_ORG: ${{ inputs.SG_ORG }}
+        SG_BASE_URL: ${{ inputs.SG_BASE_URL }}
