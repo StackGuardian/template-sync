@@ -23,8 +23,8 @@ your-repo/
 │       └── stackguardian-template-sync.yml  # Your workflow file
 ├── .sg/                                     # Template files directory
 │   ├── documentation.md                     # Template documentation
-│   ├── schema.json                          # Template input schema (base64 encoded)
-│   └── ui.json                              # Template UI schema (base64 encoded)
+│   ├── schema.json                          # Template input schema
+│   └── ui.json                              # Template UI schema
 └── README.md
 ```
 
@@ -122,8 +122,8 @@ jobs:
 Place your StackGuardian template files in the `.sg/` directory:
 
 - `documentation.md`: Contains the template documentation/long description
-- `schema.json`: Contains the template input schema (base64 encoded)
-- `ui.json`: Contains the template UI schema (base64 encoded)
+- `schema.json`: Contains the template input schema
+- `ui.json`: Contains the template UI schema
 
 ## 5. Manual Trigger
 

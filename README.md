@@ -32,8 +32,8 @@ The action expects your StackGuardian template files in a specific directory str
 ```
 .sg/
 ├── documentation.md  # Template documentation/long description
-├── schema.json       # Template input schema (base64 encoded)
-└── ui.json           # Template UI schema (base64 encoded)
+├── schema.json       # Template input schema
+└── ui.json           # Template UI schema
 ```
 
 ### 3. Workflow Configuration
