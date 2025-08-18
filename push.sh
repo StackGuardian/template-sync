@@ -9,7 +9,7 @@ set -euo pipefail  # Exit on error, undefined variables, and pipe failures
 # Debug logging function
 debug() {
     if [[ "${DEBUG:-false}" == "true" ]]; then
-        echo "[$(date +'%Y-%m-%d %H:%M:%S')] [DEBUG] $1" >&2
+            log "[DEBUG] $1" >&2
     fi
 }
 
@@ -19,8 +19,8 @@ log() {
 }
 
 # Error handling function
-handle_error() {
-    log "ERROR: $1"
+error() {
+    log "[ERROR] $1"
     exit 1
 }
 
@@ -29,11 +29,10 @@ check_env_vars() {
     local missing_vars=()
     
     [[ -z "${SG_TOKEN:-}" ]] && missing_vars+=("SG_TOKEN")
-    [[ -z "${SG_ORG:-}" ]] && missing_vars+=("SG_ORG")
-    [[ -z "${SG_TEMPLATE:-}" ]] && missing_vars+=("SG_TEMPLATE")
+    [[ -z "${SG_TEMPLATE_ID:-}" ]] && missing_vars+=("SG_TEMPLATE_ID")
     
     if [[ ${#missing_vars[@]} -gt 0 ]]; then
-        handle_error "Missing required environment variables: ${missing_vars[*]}"
+        error "Missing required environment variables: ${missing_vars[*]}"
     fi
     
     # Set default values if not provided
@@ -42,10 +41,36 @@ check_env_vars() {
     
     debug "Environment variables set:"
     debug "  SG_TOKEN: ${SG_TOKEN:0:5}... (masked)"
-    debug "  SG_ORG: $SG_ORG"
-    debug "  SG_TEMPLATE: $SG_TEMPLATE"
+    debug "  SG_TEMPLATE_ID: $SG_TEMPLATE_ID"
     debug "  SG_BASE_PATH: $SG_BASE_PATH"
     debug "  SG_BASE_URL: $SG_BASE_URL"
+}
+
+# Function to make API calls
+api_call() {
+    local url="$1"
+    local org_id
+    org_id=$(echo "$SG_TEMPLATE_ID" | cut -d'/' -f2)
+    local response
+    
+    debug "Making API call to: $url"
+    
+    debug "API call headers:"
+    debug "  Authorization: apikey ${SG_TOKEN:0:5}... (masked)"
+    debug "  x-sg-orgid: $org_id"
+    
+    response=$(curl -s -H "Authorization: apikey ${SG_TOKEN}" \
+        -H "x-sg-orgid: $org_id" \
+        "$url")
+    
+    debug "API response received (first 200 characters): ${response:0:200}..."
+    
+    # Check if response contains error
+    if echo "$response" | jq -e '.errors' > /dev/null 2>&1; then
+        error "API error: $(echo "$response" | jq -r '.errors')"
+    fi
+    
+    echo "$response"
 }
 
 # Function to make API calls with PATCH method
@@ -56,14 +81,17 @@ api_patch_call() {
     
     debug "Making PATCH API call to: $url"
     
+    local org_id
+    org_id=$(echo "$SG_TEMPLATE_ID" | cut -d'/' -f2)
+
     debug "API call headers:"
     debug "  Authorization: apikey ${SG_TOKEN:0:5}... (masked)"
-    debug "  x-sg-orgid: $SG_ORG"
+    debug "  x-sg-orgid: $org_id"
     debug "  Content-Type: application/json"
     
     response=$(curl -s -X PATCH \
         -H "Authorization: apikey ${SG_TOKEN}" \
-        -H "x-sg-orgid: ${SG_ORG}" \
+        -H "x-sg-orgid: $org_id" \
         -H "Content-Type: application/json" \
         -d "$data" \
         "$url")
@@ -72,7 +100,7 @@ api_patch_call() {
     
     # Check if response contains error
     if echo "$response" | jq -e '.errors' > /dev/null 2>&1; then
-        handle_error "API error: $(echo "$response" | jq -r '.errors')"
+        error "API error: $(echo "$response" | jq -r '.errors')"
     fi
     
     echo "$response"
@@ -135,9 +163,50 @@ main() {
     
     # Check if base path exists
     if [[ ! -d "$SG_BASE_PATH" ]]; then
-        handle_error "Base path $SG_BASE_PATH does not exist"
+        error "Base path $SG_BASE_PATH does not exist"
     fi
     
+    # Resolve Template ID if revision is not specified
+    local final_template_id="$SG_TEMPLATE_ID"
+    if [[ ! "$SG_TEMPLATE_ID" =~ :[0-9]+$ ]]; then
+        log "Revision not specified in SG_TEMPLATE_ID, resolving latest..."
+        local template_list_url="${SG_BASE_URL}/api/v1/templatetypes/IAC/templates/listall/?TemplateId=${SG_TEMPLATE_ID}"
+        debug "Template list URL: $template_list_url"
+        local template_list
+        template_list=$(api_call "$template_list_url")
+
+        debug "Template list response (first 200 characters): ${template_list:0:200}..."
+
+        # Extract latest revision's TemplateId
+        final_template_id=$(echo "$template_list" | jq -r '.msg[-1].TemplateId')
+
+        debug "Resolved latest TemplateId: $final_template_id"
+
+        if [[ -z "$final_template_id" || "$final_template_id" == "null" ]]; then
+            error "Could not determine latest TemplateId for ${SG_TEMPLATE_ID}"
+        fi
+    else
+        log "Revision specified in SG_TEMPLATE_ID, using it directly."
+    fi
+
+    log "Using TemplateId: $final_template_id"
+
+    # Validate template status before updating
+    log "Validating template status..."
+    local template_details_url="${SG_BASE_URL}/api/v1/templatetypes/IAC${final_template_id}"
+    local template_details
+    template_details=$(api_call "$template_details_url")
+
+    
+    local is_public
+    is_public=$(echo "$template_details" | jq -r '.msg.IsPublic')
+
+    if [[ "$is_public" == "1" ]]; then
+        error "Cannot update a published template revision."
+    fi
+
+    log "Template is not published. Proceeding with update."
+
     # Prepare data for API update
     log "Preparing template data from ${SG_BASE_PATH}"
     local template_data
@@ -145,31 +214,8 @@ main() {
     
     debug "Prepared template data (first 200 characters): ${template_data:0:200}..."
     
-    # Fetch template summary to get latest revision
-    local template_summary_url="${SG_BASE_URL}/api/v1/templatetypes/IAC/${SG_ORG}/${SG_TEMPLATE}/"
-    debug "Template summary URL: $template_summary_url"
-    
-    local template_summary
-    template_summary=$(curl -s -H "Authorization: apikey ${SG_TOKEN}" \
-        -H "x-sg-orgid: ${SG_ORG}" \
-        "$template_summary_url")
-    
-    debug "Template summary response (first 200 characters): ${template_summary:0:200}..."
-    
-    # Extract latest revision
-    local latest_revision
-    latest_revision=$(( $(echo "$template_summary" | jq -r '.msg.NextRevision') - 1 ))
-    
-    debug "Calculated latest revision: $latest_revision"
-    
-    if [[ $latest_revision -lt 0 ]]; then
-        handle_error "Invalid latest revision: $latest_revision"
-    fi
-    
-    log "Latest revision: $latest_revision"
-    
     # Update template with local changes using PATCH method
-    local template_update_url="${SG_BASE_URL}/api/v1/templatetypes/IAC/${SG_ORG}/${SG_TEMPLATE}:${latest_revision}/"
+    local template_update_url="${SG_BASE_URL}/api/v1/templatetypes/IAC${final_template_id}"
     debug "Template update URL: $template_update_url"
     
     local update_response
