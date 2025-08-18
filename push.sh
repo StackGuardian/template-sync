@@ -24,6 +24,23 @@ error() {
     exit 1
 }
 
+# Parse command line arguments
+parse_args() {
+    USE_YAML=false
+    
+    while [[ $# -gt 0 ]]; do
+        case $1 in
+            --yaml)
+                USE_YAML=true
+                shift
+                ;;
+            *)
+                handle_error "Unknown option: $1"
+                ;;
+        esac
+    done
+}
+
 # Check if required environment variables are set
 check_env_vars() {
     local missing_vars=()
@@ -44,6 +61,7 @@ check_env_vars() {
     debug "  SG_TEMPLATE_ID: $SG_TEMPLATE_ID"
     debug "  SG_BASE_PATH: $SG_BASE_PATH"
     debug "  SG_BASE_URL: $SG_BASE_URL"
+    debug "  USE_YAML: $USE_YAML"
 }
 
 # Function to make API calls
@@ -106,12 +124,25 @@ api_patch_call() {
     echo "$response"
 }
 
+# Function to convert YAML to JSON
+yaml_to_json() {
+    yq eval -o json
+}
+
 # Function to read local files and prepare data for API update
 prepare_template_data() {
     local long_description=""
     local schema_data=""
     local ui_schema_data=""
     
+    # Determine file extensions based on YAML flag
+    local schema_ext="json"
+    local ui_ext="json"
+    if [[ "$USE_YAML" == true ]]; then
+        schema_ext="yaml"
+        ui_ext="yaml"
+    fi
+
     # Create a base payload
     local payload
     payload=$(jq -n \
@@ -134,22 +165,30 @@ prepare_template_data() {
         log "Warning: ${SG_BASE_PATH}/documentation.md not found" >&2
     fi
 
-    # Read schema.json and encode it
-    if [[ -f "${SG_BASE_PATH}/schema.json" ]]; then
-        schema_data=$(cat "${SG_BASE_PATH}/schema.json" | base64)
-        debug "Read and encoded schema.json (${#schema_data} characters)"
+    # Read schema file and encode it
+    if [[ -f "${SG_BASE_PATH}/schema.${schema_ext}" ]]; then
+        if [[ "$USE_YAML" == true ]]; then
+            schema_data=$(cat "${SG_BASE_PATH}/schema.${schema_ext}" | yaml_to_json | base64)
+        else
+            schema_data=$(cat "${SG_BASE_PATH}/schema.${schema_ext}" | base64)
+        fi
+        debug "Read and encoded schema.${schema_ext} (${#schema_data} characters)"
         payload=$(echo "$payload" | jq --arg schemaData "$schema_data" '.InputSchemas[0].encodedData = $schemaData')
     else
-        error "${SG_BASE_PATH}/schema.json not found"
+        error "${SG_BASE_PATH}/schema.${schema_ext} not found"
     fi
 
-    # Read ui.json and encode it
-    if [[ -f "${SG_BASE_PATH}/ui.json" ]]; then
-        ui_schema_data=$(cat "${SG_BASE_PATH}/ui.json" | base64)
-        debug "Read and encoded ui.json (${#ui_schema_data} characters)"
+    # Read ui file and encode it
+    if [[ -f "${SG_BASE_PATH}/ui.${ui_ext}" ]]; then
+        if [[ "$USE_YAML" == true ]]; then
+            ui_schema_data=$(cat "${SG_BASE_PATH}/ui.${ui_ext}" | yaml_to_json | base64)
+        else
+            ui_schema_data=$(cat "${SG_BASE_PATH}/ui.${ui_ext}" | base64)
+        fi
+        debug "Read and encoded ui.${ui_ext} (${#ui_schema_data} characters)"
         payload=$(echo "$payload" | jq --arg uiSchemaData "$ui_schema_data" '.InputSchemas[0].uiSchemaData = $uiSchemaData')
     else
-        error "${SG_BASE_PATH}/ui.json not found"
+        error "${SG_BASE_PATH}/ui.${ui_ext} not found"
     fi
 
     echo "$payload"
@@ -157,6 +196,9 @@ prepare_template_data() {
 
 # Main execution
 main() {
+    # Parse command line arguments
+    parse_args "$@"
+    
     log "Running StackGuardian Template Push..."
     
     # Validate environment variables

@@ -8,9 +8,9 @@ tasks:
   push:
     desc: "Pushes local template information from .sg folder back to StackGuardian API"
     cmds:
-      - ./push.sh
+      - ./push.sh {{.CLI_ARGS}}
 
   pull:
     desc: "Fetches template information from StackGuardian API and syncs it with local files"
     cmds:
-      - ./pull.sh
+      - ./pull.sh {{.CLI_ARGS}}

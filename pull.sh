@@ -24,6 +24,23 @@ error() {
     exit 1
 }
 
+# Parse command line arguments
+parse_args() {
+    USE_YAML=false
+    
+    while [[ $# -gt 0 ]]; do
+        case $1 in
+            --yaml)
+                USE_YAML=true
+                shift
+                ;;
+            *)
+                handle_error "Unknown option: $1"
+                ;;
+        esac
+    done
+}
+
 # Check if required environment variables are set
 check_env_vars() {
     local missing_vars=()
@@ -44,6 +61,7 @@ check_env_vars() {
     debug "  SG_TEMPLATE_ID: $SG_TEMPLATE_ID"
     debug "  SG_BASE_PATH: $SG_BASE_PATH"
     debug "  SG_BASE_URL: $SG_BASE_URL"
+    debug "  USE_YAML: $USE_YAML"
 }
 
 # Function to make API calls
@@ -89,6 +107,11 @@ save_documentation() {
     fi
 }
 
+# Function to convert JSON to YAML
+json_to_yaml() {
+    yq eval -P -o yaml
+}
+
 # Function to extract and save schema data
 save_schema_data() {
     local details="$1"
@@ -102,26 +125,44 @@ save_schema_data() {
         echo "$data" | base64 -d | jq '.' > "$file_path"
     }
     
-    # Extract and decode encodedData from InputSchemas[0].encodedData (for schema.json)
+    # Determine file extensions based on YAML flag
+    local schema_ext="json"
+    local ui_ext="json"
+    if [[ "$USE_YAML" == true ]]; then
+        schema_ext="yaml"
+        ui_ext="yaml"
+    fi
+    
+    # Extract and decode encodedData from InputSchemas[0].encodedData (for schema.json/yaml)
     local ui_schema_data
     ui_schema_data=$(echo "$details" | jq -r '.msg.InputSchemas[0].encodedData // empty')
     debug "uiSchemaData length: ${#ui_schema_data}"
     
     if [[ -n "$ui_schema_data" ]]; then
-        save_json "$ui_schema_data" "${SG_BASE_PATH}/schema.json"
-        log "Saved uiSchemaData to ${SG_BASE_PATH}/schema.json"
+        if [[ "$USE_YAML" == true ]]; then
+            echo "$ui_schema_data" | base64 -d | json_to_yaml > "${SG_BASE_PATH}/schema.${schema_ext}"
+            log "Saved uiSchemaData to ${SG_BASE_PATH}/schema.${schema_ext}"
+        else
+            echo "$ui_schema_data" | base64 -d | jq '.' > "${SG_BASE_PATH}/schema.${schema_ext}"
+            log "Saved uiSchemaData to ${SG_BASE_PATH}/schema.${schema_ext}"
+        fi
     else
         log "No uiSchemaData found in InputSchemas[0].encodedData"
     fi
     
-    # Extract and decode uiSchemaData from InputSchemas[0].uiSchemaData (for ui.json)
+    # Extract and decode uiSchemaData from InputSchemas[0].uiSchemaData (for ui.json/yaml)
     local schema_data
     schema_data=$(echo "$details" | jq -r '.msg.InputSchemas[0].uiSchemaData // empty')
     debug "encodedData length: ${#schema_data}"
     
     if [[ -n "$schema_data" ]]; then
-        save_json "$schema_data" "${SG_BASE_PATH}/ui.json"
-        log "Saved encodedData to ${SG_BASE_PATH}/ui.json"
+        if [[ "$USE_YAML" == true ]]; then
+            echo "$schema_data" | base64 -d | json_to_yaml > "${SG_BASE_PATH}/ui.${ui_ext}"
+            log "Saved encodedData to ${SG_BASE_PATH}/ui.${ui_ext}"
+        else
+            echo "$schema_data" | base64 -d | jq '.' > "${SG_BASE_PATH}/ui.${ui_ext}"
+            log "Saved encodedData to ${SG_BASE_PATH}/ui.${ui_ext}"
+        fi
     else
         log "No encodedData found in InputSchemas[0].uiSchemaData"
     fi
@@ -129,6 +170,9 @@ save_schema_data() {
 
 # Main execution
 main() {
+    # Parse command line arguments
+    parse_args "$@"
+    
     log "Running StackGuardian Template Sync..."
     
     # Validate environment variables
