@@ -94,6 +94,13 @@ save_schema_data() {
     local details="$1"
 
     debug "Processing schema data extraction by index"
+
+    # Function to save JSON data
+    save_json() {
+        local data="$1"
+        local file_path="$2"
+        echo "$data" | base64 -d | jq '.' > "$file_path"
+    }
     
     # Extract and decode encodedData from InputSchemas[0].encodedData (for schema.json)
     local ui_schema_data
@@ -101,7 +108,7 @@ save_schema_data() {
     debug "uiSchemaData length: ${#ui_schema_data}"
     
     if [[ -n "$ui_schema_data" ]]; then
-        echo "$ui_schema_data" | base64 -d > "${SG_BASE_PATH}/schema.json"
+        save_json "$ui_schema_data" "${SG_BASE_PATH}/schema.json"
         log "Saved uiSchemaData to ${SG_BASE_PATH}/schema.json"
     else
         log "No uiSchemaData found in InputSchemas[0].encodedData"
@@ -113,7 +120,7 @@ save_schema_data() {
     debug "encodedData length: ${#schema_data}"
     
     if [[ -n "$schema_data" ]]; then
-        echo "$schema_data" | base64 -d > "${SG_BASE_PATH}/ui.json"
+        save_json "$schema_data" "${SG_BASE_PATH}/ui.json"
         log "Saved encodedData to ${SG_BASE_PATH}/ui.json"
     else
         log "No encodedData found in InputSchemas[0].uiSchemaData"
