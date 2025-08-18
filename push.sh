@@ -20,7 +20,7 @@ log() {
 
 # Error handling function
 error() {
-    log "[ERROR] $1"
+    log "[ERROR] $1" >&2
     exit 1
 }
 
@@ -95,7 +95,7 @@ api_patch_call() {
         -H "Content-Type: application/json" \
         -d "$data" \
         "$url")
-    
+
     debug "API response received (first 200 characters): ${response:0:200}..."
     
     # Check if response contains error
@@ -112,45 +112,46 @@ prepare_template_data() {
     local schema_data=""
     local ui_schema_data=""
     
-    # Read documentation.md
-    if [[ -f "${SG_BASE_PATH}/documentation.md" ]]; then
-        long_description=$(cat "${SG_BASE_PATH}/documentation.md")
-        debug "Read documentation.md (${#long_description} characters)"
-    else
-        log "Warning: ${SG_BASE_PATH}/documentation.md not found"
-    fi
-    
-    # Read schema.json and encode it
-    if [[ -f "${SG_BASE_PATH}/schema.json" ]]; then
-        schema_data=$(cat "${SG_BASE_PATH}/schema.json" | base64)
-        debug "Read and encoded schema.json (${#schema_data} characters)"
-    else
-        log "Warning: ${SG_BASE_PATH}/schema.json not found"
-    fi
-    
-    # Read ui.json and encode it
-    if [[ -f "${SG_BASE_PATH}/ui.json" ]]; then
-        ui_schema_data=$(cat "${SG_BASE_PATH}/ui.json" | base64)
-        debug "Read and encoded ui.json (${#ui_schema_data} characters)"
-    else
-        log "Warning: ${SG_BASE_PATH}/ui.json not found"
-    fi
-    
-    # Create JSON payload for the API
+    # Create a base payload
     local payload
     payload=$(jq -n \
-        --arg longDesc "$long_description" \
-        --arg schemaData "$schema_data" \
-        --arg uiSchemaData "$ui_schema_data" \
+        --arg schemaData "" \
+        --arg uiSchemaData "" \
         '{
-            "LongDescription": $longDesc,
             "InputSchemas": [{
                 "type": "FORM_JSONSCHEMA",
                 "encodedData": $schemaData,
                 "uiSchemaData": $uiSchemaData
             }]
         }')
-    
+
+    # Conditionally add LongDescription
+    if [[ -f "${SG_BASE_PATH}/documentation.md" ]]; then
+        long_description=$(cat "${SG_BASE_PATH}/documentation.md")
+        debug "Read documentation.md (${#long_description} characters)"
+        payload=$(echo "$payload" | jq --arg longDesc "$long_description" '.LongDescription = $longDesc')
+    else
+        log "Warning: ${SG_BASE_PATH}/documentation.md not found" >&2
+    fi
+
+    # Read schema.json and encode it
+    if [[ -f "${SG_BASE_PATH}/schema.json" ]]; then
+        schema_data=$(cat "${SG_BASE_PATH}/schema.json" | base64)
+        debug "Read and encoded schema.json (${#schema_data} characters)"
+        payload=$(echo "$payload" | jq --arg schemaData "$schema_data" '.InputSchemas[0].encodedData = $schemaData')
+    else
+        error "${SG_BASE_PATH}/schema.json not found"
+    fi
+
+    # Read ui.json and encode it
+    if [[ -f "${SG_BASE_PATH}/ui.json" ]]; then
+        ui_schema_data=$(cat "${SG_BASE_PATH}/ui.json" | base64)
+        debug "Read and encoded ui.json (${#ui_schema_data} characters)"
+        payload=$(echo "$payload" | jq --arg uiSchemaData "$ui_schema_data" '.InputSchemas[0].uiSchemaData = $uiSchemaData')
+    else
+        error "${SG_BASE_PATH}/ui.json not found"
+    fi
+
     echo "$payload"
 }
 
@@ -217,7 +218,7 @@ main() {
     # Update template with local changes using PATCH method
     local template_update_url="${SG_BASE_URL}/api/v1/templatetypes/IAC${final_template_id}"
     debug "Template update URL: $template_update_url"
-    
+
     local update_response
     update_response=$(api_patch_call "$template_update_url" "$template_data")
     
