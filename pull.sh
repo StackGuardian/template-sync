@@ -57,10 +57,10 @@ api_call() {
     
     debug "API call headers:"
     debug "  Authorization: apikey ${SG_TOKEN:0:5}... (masked)"
-    debug "  X-Sg-Orgid: $SG_ORG"
+    debug "  x-sg-orgid: $SG_ORG"
     
     response=$(curl -s -H "Authorization: apikey ${SG_TOKEN}" \
-        -H "X-Sg-Orgid: ${SG_ORG}" \
+        -H "x-sg-orgid: ${SG_ORG}" \
         "$url")
     
     debug "API response received (first 200 characters): ${response:0:200}..."

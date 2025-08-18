@@ -58,12 +58,12 @@ api_patch_call() {
     
     debug "API call headers:"
     debug "  Authorization: apikey ${SG_TOKEN:0:5}... (masked)"
-    debug "  X-Sg-Orgid: $SG_ORG"
+    debug "  x-sg-orgid: $SG_ORG"
     debug "  Content-Type: application/json"
     
     response=$(curl -s -X PATCH \
         -H "Authorization: apikey ${SG_TOKEN}" \
-        -H "X-Sg-Orgid: ${SG_ORG}" \
+        -H "x-sg-orgid: ${SG_ORG}" \
         -H "Content-Type: application/json" \
         -d "$data" \
         "$url")
@@ -151,7 +151,7 @@ main() {
     
     local template_summary
     template_summary=$(curl -s -H "Authorization: apikey ${SG_TOKEN}" \
-        -H "X-Sg-Orgid: ${SG_ORG}" \
+        -H "x-sg-orgid: ${SG_ORG}" \
         "$template_summary_url")
     
     debug "Template summary response (first 200 characters): ${template_summary:0:200}..."
