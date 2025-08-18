@@ -39,6 +39,33 @@ parse_args() {
                 ;;
         esac
     done
+    
+}
+
+# Check if required dependencies are installed
+check_dependencies() {
+    local missing_deps=()
+    
+    # Check for curl
+    if ! command -v curl &> /dev/null; then
+        missing_deps+=("curl")
+    fi
+    
+    # Check for jq
+    if ! command -v jq &> /dev/null; then
+        missing_deps+=("jq")
+    fi
+    
+    # Check for yq if YAML support is enabled
+    if [[ "$USE_YAML" == true ]]; then
+        if ! command -v yq &> /dev/null; then
+            missing_deps+=("yq")
+        fi
+    fi
+    
+    if [[ ${#missing_deps[@]} -gt 0 ]]; then
+        handle_error "Missing required dependencies: ${missing_deps[*]}"
+    fi
 }
 
 # Check if required environment variables are set
@@ -177,6 +204,9 @@ main() {
     
     # Validate environment variables
     check_env_vars
+    
+    # Check dependencies
+    check_dependencies
     
     # Ensure base path exists
     debug "Ensuring base path exists: $SG_BASE_PATH"
