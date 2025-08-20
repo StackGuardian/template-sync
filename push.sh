@@ -136,7 +136,7 @@ prepare_template_data() {
 
     # Read schema.json and encode it
     if [[ -f "${SG_BASE_PATH}/schema.json" ]]; then
-        schema_data=$(cat "${SG_BASE_PATH}/schema.json" | base64)
+        schema_data=$(cat "${SG_BASE_PATH}/schema.json" | base64 -w0)
         debug "Read and encoded schema.json (${#schema_data} characters)"
         payload=$(echo "$payload" | jq --arg schemaData "$schema_data" '.InputSchemas[0].encodedData = $schemaData')
     else
@@ -145,7 +145,7 @@ prepare_template_data() {
 
     # Read ui.json and encode it
     if [[ -f "${SG_BASE_PATH}/ui.json" ]]; then
-        ui_schema_data=$(cat "${SG_BASE_PATH}/ui.json" | base64)
+        ui_schema_data=$(cat "${SG_BASE_PATH}/ui.json" | base64 -w0)
         debug "Read and encoded ui.json (${#ui_schema_data} characters)"
         payload=$(echo "$payload" | jq --arg uiSchemaData "$ui_schema_data" '.InputSchemas[0].uiSchemaData = $uiSchemaData')
     else
